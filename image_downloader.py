@@ -105,38 +105,34 @@ async def test_upload():
 async def root():
     return HTMLResponse(content="<h1>Image Uploader to Google Drive</h1>")
 
-@app.post("/download-audios/")
-async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
-                          limit: int = Query(1, description="The number of audios to download")):
-    audio_urls = await get_audio_urls_for_query(query, limit=limit)
+@app.post("/download-images/")
+async def download_images(query: str = Query(..., description="The search query for downloading images"), 
+                          limit: int = Query(1, description="The number of images to download")):
+    image_urls = get_image_urls_for_query(query, limit=limit)
     service = build_drive_service()
-    
+    uploaded_urls = []
+
     with tempfile.TemporaryDirectory() as temp_dir:
-        zip_filename = os.path.join(temp_dir, "audios.zip")
+        zip_filename = os.path.join(temp_dir, "images.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for i, audio_url in enumerate(audio_urls):
-                # Ensure you're calling the correct function
-                file_content = test_download_audio_directly(audio_url)  # Corrected function name
-                if file_content and file_content.getbuffer().nbytes > 0:
-                    audio_name = f"audio_{i}.mp3"
-                    audio_path = os.path.join(temp_dir, audio_name)
-                    with open(audio_path, 'wb') as audio_file:
-                        audio_file.write(file_content.getbuffer())
-                    
-                    # Attempt to load the file using pydub to confirm it's a valid audio file
-                    try:
-                        AudioSegment.from_file(audio_path)
-                        print(f"Audio file {audio_name} validated successfully.")
-                        zipf.write(audio_path, arcname=audio_name)
-                    except Exception as e:
-                        print(f"Failed to validate audio file: {e}")
-                        continue
-                else:
-                    print(f"Skipping url {audio_url}, no content downloaded.")
+            for i, image_url in enumerate(image_urls):
+                file_content = download_image_in_memory(image_url)
+                if not file_content:
+                    continue  # Skip this image and proceed to the next
+                
+                image_name = f"image_{i}.jpg"
+                image_path = os.path.join(temp_dir, image_name)
+                with open(image_path, 'wb') as image_file:
+                    image_file.write(file_content.getbuffer())  # Write the image content to a file
+                
+                zipf.write(image_path, arcname=image_name)  # Add the image to the zip file
+
+        # Upload the zip file to Google Drive
+        file_metadata = {'name': 'images.zip'}
+        media = MediaFileUpload(zip_filename, mimetype='application/zip')
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        permission = {'type': 'anyone', 'role': 'reader'}
+        service.permissions().create(fileId=file.get('id'), body=permission).execute()
+        drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
         
-        if os.path.getsize(zip_filename) > 0:
-            drive_url = await upload_to_drive(service, zip_filename)
-            return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
-        else:
-            print("Zip file is empty. No audio files were added.")
-            return {"message": "No audios were downloaded. Zip file is empty."}
+        return {"message": "Zip file uploaded successfully.", "url": drive_url}
