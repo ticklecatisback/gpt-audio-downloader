@@ -115,8 +115,8 @@ async def download_audios(query: str = Query(..., description="The search query 
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
             for i, audio_url in enumerate(audio_urls):
-                # Make sure to call the correct function name
-                file_content = test_download_audio_directly(audio_url)
+                # Ensure you're calling the correct function
+                file_content = test_download_audio_directly(audio_url)  # Corrected function name
                 if file_content and file_content.getbuffer().nbytes > 0:
                     audio_name = f"audio_{i}.mp3"
                     audio_path = os.path.join(temp_dir, audio_name)
@@ -133,3 +133,10 @@ async def download_audios(query: str = Query(..., description="The search query 
                         continue
                 else:
                     print(f"Skipping url {audio_url}, no content downloaded.")
+        
+        if os.path.getsize(zip_filename) > 0:
+            drive_url = await upload_to_drive(service, zip_filename)
+            return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+        else:
+            print("Zip file is empty. No audio files were added.")
+            return {"message": "No audios were downloaded. Zip file is empty."}
